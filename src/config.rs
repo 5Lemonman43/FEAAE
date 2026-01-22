@@ -51,3 +51,52 @@ impl Config {
         })
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serial_test::serial;
+
+    #[test]
+    #[serial]
+    fn test_config_from_env_with_defaults() {
+        std::env::remove_var("POLYMARKET_API_KEY");
+        std::env::remove_var("MIN_PROFIT_THRESHOLD");
+        std::env::remove_var("MAX_POSITION_SIZE");
+        std::env::remove_var("TRADE_AMOUNT");
+        std::env::remove_var("POLYMARKET_WS_URL");
+        
+        let config = Config::from_env().unwrap();
+        assert!(config.polymarket_api_key.is_none());
+        assert!((config.min_profit_threshold - 0.02).abs() < 0.001);
+        assert!((config.max_position_size - 100.0).abs() < 0.1);
+        assert!((config.trade_amount - 10.0).abs() < 0.1);
+    }
+
+    #[test]
+    #[serial]
+    fn test_config_from_env_with_custom_values() {
+        std::env::remove_var("POLYMARKET_WS_URL");
+        std::env::set_var("MIN_PROFIT_THRESHOLD", "0.05");
+        std::env::set_var("MAX_POSITION_SIZE", "200.0");
+        std::env::set_var("TRADE_AMOUNT", "25.0");
+        
+        let config = Config::from_env().unwrap();
+        assert!((config.min_profit_threshold - 0.05).abs() < 0.001);
+        assert!((config.max_position_size - 200.0).abs() < 0.1);
+        assert!((config.trade_amount - 25.0).abs() < 0.1);
+        
+        std::env::remove_var("MIN_PROFIT_THRESHOLD");
+        std::env::remove_var("MAX_POSITION_SIZE");
+        std::env::remove_var("TRADE_AMOUNT");
+    }
+
+    #[test]
+    #[serial]
+    fn test_config_invalid_threshold() {
+        std::env::set_var("MIN_PROFIT_THRESHOLD", "invalid");
+        let result = Config::from_env();
+        assert!(result.is_err());
+        std::env::remove_var("MIN_PROFIT_THRESHOLD");
+    }
+}

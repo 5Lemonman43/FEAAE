@@ -215,3 +215,149 @@ impl Default for BotState {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_bot_state_new() {
+        let state = BotState::new();
+        assert_eq!(state.positions.len(), 0);
+        assert_eq!(state.trades.len(), 0);
+        assert_eq!(state.btc_markets.len(), 0);
+        assert_eq!(state.sol_markets.len(), 0);
+        assert_eq!(state.total_pnl, 0.0);
+    }
+
+    #[test]
+    fn test_update_position_buy() {
+        let mut state = BotState::new();
+        let trade = Trade {
+            id: "test1".to_string(),
+            market_id: "market1".to_string(),
+            outcome: "Yes".to_string(),
+            side: TradeSide::Buy,
+            amount: 10.0,
+            price: 0.5,
+            timestamp: Utc::now(),
+            status: TradeStatus::Executed,
+        };
+
+        state.update_position(&trade);
+        let key = "market1_Yes";
+        assert!(state.positions.contains_key(key));
+        let position = state.positions.get(key).unwrap();
+        assert_eq!(position.shares, 10.0);
+        assert_eq!(position.average_price, 0.5);
+    }
+
+    #[test]
+    fn test_update_position_multiple_buys() {
+        let mut state = BotState::new();
+        
+        let trade1 = Trade {
+            id: "test1".to_string(),
+            market_id: "market1".to_string(),
+            outcome: "Yes".to_string(),
+            side: TradeSide::Buy,
+            amount: 10.0,
+            price: 0.5,
+            timestamp: Utc::now(),
+            status: TradeStatus::Executed,
+        };
+        state.update_position(&trade1);
+
+        let trade2 = Trade {
+            id: "test2".to_string(),
+            market_id: "market1".to_string(),
+            outcome: "Yes".to_string(),
+            side: TradeSide::Buy,
+            amount: 10.0,
+            price: 0.6,
+            timestamp: Utc::now(),
+            status: TradeStatus::Executed,
+        };
+        state.update_position(&trade2);
+
+        let key = "market1_Yes";
+        let position = state.positions.get(key).unwrap();
+        assert_eq!(position.shares, 20.0);
+        assert_eq!(position.average_price, 0.55);
+    }
+
+    #[test]
+    fn test_calculate_total_pnl() {
+        let mut state = BotState::new();
+        
+        let trade1 = Trade {
+            id: "test1".to_string(),
+            market_id: "market1".to_string(),
+            outcome: "Yes".to_string(),
+            side: TradeSide::Buy,
+            amount: 10.0,
+            price: 0.5,
+            timestamp: Utc::now(),
+            status: TradeStatus::Executed,
+        };
+        state.update_position(&trade1);
+
+        let trade2 = Trade {
+            id: "test2".to_string(),
+            market_id: "market1".to_string(),
+            outcome: "Yes".to_string(),
+            side: TradeSide::Buy,
+            amount: 0.0,
+            price: 0.6,
+            timestamp: Utc::now(),
+            status: TradeStatus::Executed,
+        };
+        state.update_position(&trade2);
+
+        state.calculate_total_pnl();
+        assert!((state.total_pnl - 1.0).abs() < 0.01, "PnL should be approximately 1.0, got {}", state.total_pnl);
+    }
+
+    #[test]
+    fn test_market_serialization() {
+        let market = Market {
+            id: "test_market".to_string(),
+            question: "Test question?".to_string(),
+            condition_id: "cond1".to_string(),
+            slug: "test-slug".to_string(),
+            end_date_iso: "2025-01-22".to_string(),
+            game_start_time: "2025-01-22T10:00:00Z".to_string(),
+            description: "Test description".to_string(),
+            outcomes: vec!["Yes".to_string(), "No".to_string()],
+            outcome_prices: vec!["0.5".to_string(), "0.5".to_string()],
+            volume: "1000".to_string(),
+            active: true,
+            closed: false,
+            market_type: "binary".to_string(),
+            tokens: Some(vec![Token {
+                token_id: "token1".to_string(),
+                outcome: "Yes".to_string(),
+                price: Some("0.5".to_string()),
+                winner: false,
+            }]),
+        };
+
+        let json = serde_json::to_string(&market).unwrap();
+        let deserialized: Market = serde_json::from_str(&json).unwrap();
+        assert_eq!(deserialized.id, "test_market");
+        assert_eq!(deserialized.active, true);
+    }
+
+    #[test]
+    fn test_ws_message_deserialization() {
+        let json = r#"{"type":"price","market":"test_market","asset_id":"asset1","price":"0.55","timestamp":1234567890}"#;
+        let msg: WsMessage = serde_json::from_str(json).unwrap();
+        match msg {
+            WsMessage::Price { market, price, .. } => {
+                assert_eq!(market, "test_market");
+                assert_eq!(price, "0.55");
+            }
+            _ => panic!("Wrong message type"),
+        }
+    }
+}
